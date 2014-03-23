@@ -21,27 +21,103 @@ import android.view.MotionEvent;
 /**
  * A polygon on the earth's surface. 
  * Mimics the Polygon class from Google Maps Android API v2 as much as possible. Main differences:<br/>
- * - Doesn't support: holes, Z-Index, Geodesic mode<br/>
+ * - Doesn't support: Z-Index, Geodesic mode<br/>
  * - Supports InfoWindow. 
  * 
  * @author Viesturs Zarins, Martin Pearman for efficient PathOverlay.draw method
- * @author M.Kergall: transformation from PathOverlay to PolygonOverlay
+ * @author M.Kergall: transformation from PathOverlay to Polygon
  */
 public class Polygon extends Overlay {
 
-	/**
-	 * Stores points, converted to the map projection.
-	 */
-	private List<Point> mPoints;
+	/** inner class holding a list of coordinates */
+	class LinearRing {
+		/** original GeoPoints */
+		int mOriginalPoints[][]; //as an array, to reduce object creation
+		
+		/** Stores points, converted to the map projection. */
+		ArrayList<Point> mConvertedPoints;
 
-	/**
-	 * Number of points that have precomputed values.
-	 */
-	private int mPointsPrecomputed;
+		/** is precomputation of points done or not */
+		boolean mPrecomputed;
+		
+		LinearRing(){
+			mOriginalPoints = new int[0][2];
+			mConvertedPoints = new ArrayList<Point>();
+			mPrecomputed = false;
+		}
+		
+		ArrayList<GeoPoint> getPoints(){
+			int size = mOriginalPoints.length;
+			ArrayList<GeoPoint> result = new ArrayList<GeoPoint>(size);
+			for (int i=0; i<size; i++){
+				GeoPoint gp = new GeoPoint(mOriginalPoints[i][0], mOriginalPoints[i][1]);
+				result.add(gp);
+			}
+			return result;
+		}
+		
+		void setPoints(final List<GeoPoint> points) {
+			int size = points.size();
+			mOriginalPoints = new int[size][2];
+			mConvertedPoints = new ArrayList<Point>(size);
+			int i=0;
+			for (GeoPoint p:points){
+				mOriginalPoints[i][0] = p.getLatitudeE6();
+				mOriginalPoints[i][1] = p.getLongitudeE6();
+				mConvertedPoints.add(new Point(p.getLatitudeE6(), p.getLongitudeE6()));
+				i++;
+			}
+			mPrecomputed = false;
+		}
+		
+		protected void buildPathPortion(Projection pj){
+			final int size = mConvertedPoints.size();
+			if (size < 2) // nothing to paint
+				return;
 
-	/**
-	 * Paint settings.
-	 */
+			// precompute new points to the intermediate projection.
+			if (!mPrecomputed){
+				for (int i=0; i<size; i++) {
+					final Point pt = mConvertedPoints.get(i);
+					pj.toMapPixelsProjected(pt.x, pt.y, pt);
+				}
+				mPrecomputed = true;
+			}
+
+			Point projectedPoint0 = mConvertedPoints.get(0); // points from the points list
+			Point projectedPoint1;
+			
+			Point screenPoint0 = pj.toMapPixelsTranslated(projectedPoint0, mTempPoint1); // points on screen
+			Point screenPoint1;
+			
+			mPath.moveTo(screenPoint0.x, screenPoint0.y);
+			
+			for (int i=0; i<size; i++) {
+				// compute next points
+				projectedPoint1 = mConvertedPoints.get(i);
+				screenPoint1 = pj.toMapPixelsTranslated(projectedPoint1, mTempPoint2);
+
+				if (Math.abs(screenPoint1.x - screenPoint0.x) + Math.abs(screenPoint1.y - screenPoint0.y) <= 1) {
+					// skip this point, too close to previous point
+					continue;
+				}
+
+				mPath.lineTo(screenPoint1.x, screenPoint1.y);
+
+				// update starting point to next position
+				projectedPoint0 = projectedPoint1;
+				screenPoint0.x = screenPoint1.x;
+				screenPoint0.y = screenPoint1.y;
+			}
+			mPath.close();
+		}
+		
+	}
+
+	private LinearRing mOutline;
+	private ArrayList<LinearRing> mHoles;
+	
+	/** Paint settings. */
 	protected Paint mFillPaint;
 	protected Paint mOutlinePaint;
 
@@ -71,11 +147,12 @@ public class Polygon extends Overlay {
 		mOutlinePaint.setColor(Color.BLACK);
 		mOutlinePaint.setStrokeWidth(10.0f);
 		mOutlinePaint.setStyle(Paint.Style.STROKE);
-		mPoints = new ArrayList<Point>();
-		mPointsPrecomputed = 0;
+		mOutline = new LinearRing();
+		mHoles = new ArrayList<LinearRing>();
 		mTitle = ""; 
 		mSnippet = "";
 		mBubble = null;
+		mPath.setFillType(Path.FillType.EVEN_ODD); //for holes
 	}
 
 	// ===========================================================
@@ -98,11 +175,7 @@ public class Polygon extends Overlay {
 	 * @return a copy of the list of polygon's vertices. 
 	 */
 	public List<GeoPoint> getPoints(){
-		List<GeoPoint> result = new ArrayList<GeoPoint>(mPoints.size());
-		for (Point p:mPoints){
-			result.add(new GeoPoint(p.x, p.y, 0.0));
-		}
-		return result;
+		return mOutline.getPoints();
 	}
 
 	public boolean isVisible(){
@@ -124,19 +197,31 @@ public class Polygon extends Overlay {
 	public void setVisible(boolean visible){
 		setEnabled(visible);
 	}
-	
+
 	/**
 	 * This method will take a copy of the points.
 	 */
 	public void setPoints(final List<GeoPoint> points) {
-		for (GeoPoint p:points)
-			addPoint(p.getLatitudeE6(), p.getLongitudeE6());
+		mOutline.setPoints(points);
 	}
 
-	public void addPoint(final int latitudeE6, final int longitudeE6) {
-		this.mPoints.add(new Point(latitudeE6, longitudeE6));
+	public void setHoles(List<? extends List<GeoPoint>> holes){
+		mHoles = new ArrayList<LinearRing>(holes.size());
+		for (List<GeoPoint> sourceHole:holes){
+			LinearRing newHole = new LinearRing();
+			newHole.setPoints(sourceHole);
+			mHoles.add(newHole);
+		}
 	}
 
+	public List<ArrayList<GeoPoint>> getHoles(){
+		ArrayList<ArrayList<GeoPoint>> result = new ArrayList<ArrayList<GeoPoint>>(mHoles.size());
+		for (LinearRing hole:mHoles){
+			result.add(hole.getPoints());
+		}
+		return result;
+	}
+	
 	public void setTitle(String title){
 		mTitle = title;
 	}
@@ -165,7 +250,7 @@ public class Polygon extends Overlay {
 	}
 	
 	/**
-	 * This method draws the line. Note - highly optimized to handle long paths, proceed with care.
+	 * This method draws the polygon. Note - highly optimized to handle long paths, proceed with care.
 	 * Should be fine up to 10K points.
 	 */
 	@Override protected void draw(Canvas canvas, MapView mapView, boolean shadow) {
@@ -174,62 +259,15 @@ public class Polygon extends Overlay {
 			return;
 		}
 
-		final int size = this.mPoints.size();
-		if (size < 2) {
-			// nothing to paint
-			return;
-		}
-
 		final Projection pj = mapView.getProjection();
-
-		// precompute new points to the intermediate projection.
-		while (this.mPointsPrecomputed < size) {
-			final Point pt = this.mPoints.get(this.mPointsPrecomputed);
-			pj.toMapPixelsProjected(pt.x, pt.y, pt);
-
-			this.mPointsPrecomputed++;
-		}
-
-		Point screenPoint0 = null; // points on screen
-		Point screenPoint1;
-		Point projectedPoint0; // points from the points list
-		Point projectedPoint1;
-
-		// clipping rectangle in the intermediate projection, to avoid performing projection.
-		//final Rect clipBounds = pj.fromPixelsToProjected(pj.getScreenRect());
-		
 		mPath.rewind();
-		projectedPoint0 = this.mPoints.get(size - 1);
-		//mLineBounds.set(projectedPoint0.x, projectedPoint0.y, projectedPoint0.x, projectedPoint0.y);
-
-		for (int i = size - 2; i >= 0; i--) {
-			// compute next points
-			projectedPoint1 = this.mPoints.get(i);
-			//mLineBounds.union(projectedPoint1.x, projectedPoint1.y);
-
-			// the starting point may be not calculated, because previous segment was out of clip
-			// bounds
-			if (screenPoint0 == null) {
-				screenPoint0 = pj.toMapPixelsTranslated(projectedPoint0, this.mTempPoint1);
-				mPath.moveTo(screenPoint0.x, screenPoint0.y);
-			}
-
-			screenPoint1 = pj.toMapPixelsTranslated(projectedPoint1, this.mTempPoint2);
-
-			// skip this point, too close to previous point
-			if (Math.abs(screenPoint1.x - screenPoint0.x) + Math.abs(screenPoint1.y - screenPoint0.y) <= 1) {
-				continue;
-			}
-
-			mPath.lineTo(screenPoint1.x, screenPoint1.y);
-
-			// update starting point to next position
-			projectedPoint0 = projectedPoint1;
-			screenPoint0.x = screenPoint1.x;
-			screenPoint0.y = screenPoint1.y;
-			//mLineBounds.set(projectedPoint0.x, projectedPoint0.y, projectedPoint0.x, projectedPoint0.y);
+		
+		mOutline.buildPathPortion(pj);
+		
+		for (LinearRing hole:mHoles){
+			hole.buildPathPortion(pj);
 		}
-
+		
 		canvas.drawPath(mPath, mFillPaint);
 		canvas.drawPath(mPath, mOutlinePaint);
 	}
@@ -254,8 +292,8 @@ public class Polygon extends Overlay {
 		if (touched){
 			Projection pj = mapView.getProjection();
 			GeoPoint position = (GeoPoint)pj.fromPixels(event.getX(), event.getY());
-			//as DefaultInfoWindow expect an ExtendedOverlayItem, build an ExtendedOverlayItem with needed information:
-			ExtendedOverlayItem item = new ExtendedOverlayItem(mTitle, mSnippet, position, mapView.getContext());
+			//as DefaultInfoWindow is expecting an ExtendedOverlayItem, build an ExtendedOverlayItem with needed information:
+			ExtendedOverlayItem item = new ExtendedOverlayItem(mTitle, mSnippet, position);
 			mBubble.open(item, item.getPoint(), 0, 0);
 		}
 		return touched;

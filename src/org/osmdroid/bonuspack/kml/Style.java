@@ -2,35 +2,84 @@ package org.osmdroid.bonuspack.kml;
 
 import java.io.IOException;
 import java.io.Writer;
-
+import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Paint;
+import android.graphics.drawable.BitmapDrawable;
 import android.os.Parcel;
 import android.os.Parcelable;
 
 /**
- * Handling of KML PolyStyle and LineStyle
+ * Handling of a KML Style, which may contain one PolyStyle, one LineStyle, and one IconStyle. 
  * @author M.Kergall
  */
 public class Style implements Parcelable {
 
-	ColorStyle outlineColorStyle;
-	ColorStyle fillColorStyle;
-	ColorStyle iconColorStyle;
-	float outlineWidth = 0.0f;
-	
-	/** 
-	 * @return a Paint corresponding to the style (for a line or a polygon outline)
-	 */
-	public Paint getOutlinePaint(){
-		Paint outlinePaint = new Paint();
-		outlinePaint.setColor(outlineColorStyle.getFinalColor());
-		outlinePaint.setStrokeWidth(outlineWidth);
-		outlinePaint.setStyle(Paint.Style.STROKE);
-		return outlinePaint;
-	}
+	public ColorStyle mPolyStyle;
+	public LineStyle mLineStyle;
+	public IconStyle mIconStyle;
 	
 	/** default constructor */
-	Style(){
+	public Style(){
+	}
+	
+	/** simple constructor */
+	public Style(Bitmap icon, int lineColor, float lineWidth, int fillColor){
+		mIconStyle = new IconStyle();
+		mIconStyle.mIcon = icon;
+		mLineStyle = new LineStyle();
+		mLineStyle.mColor = lineColor;
+		mLineStyle.mWidth = lineWidth;
+		mPolyStyle = new ColorStyle();
+		mPolyStyle.mColor = fillColor;
+	}
+	
+	public void setIcon(String iconHref, String containerFullPath){
+		if (mIconStyle == null)
+			mIconStyle = new IconStyle();
+		mIconStyle.setIcon(iconHref, containerFullPath);
+	}
+	
+	public BitmapDrawable getFinalIcon(Context context){
+		if (mIconStyle != null)
+			return mIconStyle.getFinalIcon(context);
+		else 
+			return null;
+	}
+	
+	public Paint getOutlinePaint(){
+		if (mLineStyle != null)
+			return mLineStyle.getOutlinePaint();
+		else {
+			Paint outlinePaint = new Paint();
+			outlinePaint.setStyle(Paint.Style.STROKE);
+			return outlinePaint;
+		}
+	}
+	
+	protected void writePolyStyle(Writer writer, ColorStyle colorStyle){
+		try {
+			writer.write("<PolyStyle>\n");
+			colorStyle.writeAsKML(writer);
+			writer.write("</PolyStyle>\n");
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public void writeAsKML(Writer writer, String styleId){
+		try {
+			writer.write("<Style id=\'"+styleId+"\'>\n");
+			if (mLineStyle != null)
+				mLineStyle.writeAsKML(writer);
+			if (mPolyStyle != null)
+				writePolyStyle(writer, mPolyStyle);
+			if (mIconStyle != null)
+				mIconStyle.writeAsKML(writer);
+			writer.write("</Style>\n");
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 	
 	//Parcelable implementation ------------
@@ -40,27 +89,10 @@ public class Style implements Parcelable {
 	}
 
 	@Override public void writeToParcel(Parcel out, int flags) {
-		out.writeParcelable(outlineColorStyle, flags);
-		out.writeParcelable(fillColorStyle, flags);
-		out.writeFloat(outlineWidth);
+		out.writeParcelable(mLineStyle, flags);
+		out.writeParcelable(mPolyStyle, flags);
+		out.writeParcelable(mIconStyle, flags);
 	}
-	
-	public void writeAsKML(Writer writer, String styleId){
-		try {
-			writer.write("<Style id=\'"+styleId+"\'>\n");
-			if (outlineColorStyle != null)
-				outlineColorStyle.writeAsKML(writer, "LineStyle", outlineWidth);
-			if (fillColorStyle != null)
-				fillColorStyle.writeAsKML(writer, "PolyStyle", 0.0f);
-			if (iconColorStyle != null)
-				iconColorStyle.writeAsKML(writer, "IconStyle", 0.0f);
-			writer.write("</Style>\n");
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
-	
-	//Parcelable implementation ------------
 	
 	public static final Parcelable.Creator<Style> CREATOR = new Parcelable.Creator<Style>() {
 		@Override public Style createFromParcel(Parcel source) {
@@ -72,8 +104,8 @@ public class Style implements Parcelable {
 	};
 	
 	public Style(Parcel in){
-		outlineColorStyle = in.readParcelable(Style.class.getClassLoader());
-		fillColorStyle = in.readParcelable(Style.class.getClassLoader());
-		outlineWidth = in.readFloat();
+		mLineStyle = in.readParcelable(LineStyle.class.getClassLoader());
+		mPolyStyle = in.readParcelable(ColorStyle.class.getClassLoader());
+		mIconStyle = in.readParcelable(IconStyle.class.getClassLoader());
 	}
 }

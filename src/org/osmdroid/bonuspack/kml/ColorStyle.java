@@ -11,17 +11,24 @@ import android.os.Parcelable;
  * Handling of KML ColorStyle
  * @author M.Kergall
  */
-class ColorStyle implements Parcelable {
+public class ColorStyle implements Parcelable {
 	/** color modes */
 	static final int MODE_NORMAL=0, MODE_RANDOM=1;
 	
-	public int color = 0;
-	public int colorMode = MODE_NORMAL;
+	public int mColor;
+	public int mColorMode;
 	
-	ColorStyle(){
+	public ColorStyle(){
+		this(0);
 	}
 	
-	public int parseKMLColor(String sColor){
+	ColorStyle(int color){
+		this.mColor = color;
+		mColorMode = MODE_NORMAL;
+	}
+	
+	/** return color in Android int color format */
+	public static int parseKMLColor(String sColor){
 		sColor = sColor.trim();
 		while (sColor.length()<8)
 			sColor = "0"+sColor;
@@ -39,38 +46,43 @@ class ColorStyle implements Parcelable {
 		return iColor;
 	}
 
-	public String colorAsKMLString(){
-		return String.format("%02X%02X%02X%02X", Color.alpha(color), Color.blue(color), Color.green(color), Color.red(color));
+	/** return color in KML color format, which is: AABBGGRR, in hexa values*/
+	public static String colorAsKMLString(int aColor){
+		return String.format("%02X%02X%02X%02X", Color.alpha(aColor), Color.blue(aColor), Color.green(aColor), Color.red(aColor));
+	}
+	
+	/** return color in usual Android color format, which is: #AARRGGBB, in hexa values*/
+	public static String colorAsAndroidString(int aColor){
+		return String.format("#%08X", 0xFFFFFFFF & aColor);
+	}
+	
+	public String colorAsAndroidString(){
+		return colorAsAndroidString(mColor);
 	}
 	
 	/**
 	 * @return the color to use on an actual object. If color mode is random, generate appropriate random color. 
 	 */
 	public int getFinalColor(){
-		if (colorMode == MODE_NORMAL)
-			return color;
+		if (mColorMode == MODE_NORMAL)
+			return mColor;
 		else  { //mode random:
 			//generate a random color within the range of each color component:
-			int alpha = Color.alpha(color);
+			int alpha = Color.alpha(mColor);
 			double randomRange = Math.random();
-			int red = Color.red(color); red = (int)(red * randomRange);
-			int green = Color.green(color); green = (int)(green * randomRange);
-			int blue = Color.blue(color); blue = (int)(blue * randomRange);
+			int red = Color.red(mColor); red = (int)(red * randomRange);
+			int green = Color.green(mColor); green = (int)(green * randomRange);
+			int blue = Color.blue(mColor); blue = (int)(blue * randomRange);
 			return Color.argb(alpha, red, green, blue);
 		}
 	}
 
-	public void writeAsKML(Writer writer, String styleType, float width){
+	public void writeAsKML(Writer writer){
 		try {
-			writer.write("<"+styleType+">\n");
-			writer.write("<color>"+colorAsKMLString()+"</color>\n");
-			if (colorMode == MODE_RANDOM){
+			writer.write("<color>"+colorAsKMLString(mColor)+"</color>\n");
+			if (mColorMode == MODE_RANDOM){
 				writer.write("<colorMode>random</colorMode>\n");
 			}
-			if (styleType.equals("LineStyle")){
-				writer.write("<width>"+width+"</width>\n");
-			}
-			writer.write("</"+styleType+">\n");
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -83,8 +95,8 @@ class ColorStyle implements Parcelable {
 	}
 
 	@Override public void writeToParcel(Parcel out, int flags) {
-		out.writeInt(color);
-		out.writeInt(colorMode);
+		out.writeInt(mColor);
+		out.writeInt(mColorMode);
 	}
 	
 	public static final Parcelable.Creator<ColorStyle> CREATOR = new Parcelable.Creator<ColorStyle>() {
@@ -97,8 +109,8 @@ class ColorStyle implements Parcelable {
 	};
 	
 	public ColorStyle(Parcel in){
-		color = in.readInt();
-		colorMode = in.readInt();
+		mColor = in.readInt();
+		mColorMode = in.readInt();
 	}
 }
 
