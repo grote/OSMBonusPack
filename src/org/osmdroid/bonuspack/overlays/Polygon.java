@@ -29,7 +29,7 @@ import android.view.MotionEvent;
  */
 public class Polygon extends Overlay {
 
-	/** inner class holding a list of coordinates */
+	/** inner class holding one ring: the polygon outline, or a hole inside the polygon */
 	class LinearRing {
 		/** original GeoPoints */
 		int mOriginalPoints[][]; //as an array, to reduce object creation
@@ -42,7 +42,7 @@ public class Polygon extends Overlay {
 		
 		LinearRing(){
 			mOriginalPoints = new int[0][2];
-			mConvertedPoints = new ArrayList<Point>();
+			mConvertedPoints = new ArrayList<Point>(0);
 			mPrecomputed = false;
 		}
 		
@@ -70,6 +70,10 @@ public class Polygon extends Overlay {
 			mPrecomputed = false;
 		}
 		
+		/** 
+		 * Note - highly optimized to handle long paths, proceed with care.
+		 * Should be fine up to 10K points.
+		 */
 		protected void buildPathPortion(Projection pj){
 			final int size = mConvertedPoints.size();
 			if (size < 2) // nothing to paint
@@ -121,14 +125,15 @@ public class Polygon extends Overlay {
 	protected Paint mFillPaint;
 	protected Paint mOutlinePaint;
 
-	private final Path mPath = new Path();
+	private final Path mPath = new Path(); //Path drawn is kept for click detection
+	private final RectF mBounds = new RectF(); //bounds of the Path
 
 	private final Point mTempPoint1 = new Point();
 	private final Point mTempPoint2 = new Point();
 
 	//InfoWindow handling
 	protected String mTitle, mSnippet;
-	protected InfoWindow mBubble;
+	protected InfoWindow mInfoWindow;
 	
 	// ===========================================================
 	// Constructors
@@ -148,11 +153,13 @@ public class Polygon extends Overlay {
 		mOutlinePaint.setStrokeWidth(10.0f);
 		mOutlinePaint.setStyle(Paint.Style.STROKE);
 		mOutline = new LinearRing();
-		mHoles = new ArrayList<LinearRing>();
-		mTitle = ""; 
-		mSnippet = "";
+		mHoles = new ArrayList<LinearRing>(0);
+		/*
+		mTitle = null;
+		mSnippet = null;
 		mBubble = null;
-		mPath.setFillType(Path.FillType.EVEN_ODD); //for holes
+		*/
+		mPath.setFillType(Path.FillType.EVEN_ODD); //for correct support of holes
 	}
 
 	// ===========================================================
@@ -238,21 +245,16 @@ public class Polygon extends Overlay {
 		return mSnippet;
 	}
 
-	/**
-	 * @param layoutResId resource id of the layout to use. Set 0 for removing the infowindow. 
-	 * @param mapView
+	/** By default, Polygon has no InfoWindow and do not react to a tap. 
+	 * @param infoWindow the InfoWindow to be opened when tapping the Polygon. 
+	 * Note that this InfoWindow will receive an ExtendedOverlayItem (not a Polygon) as an input, 
+	 * so it MUST be able to handle ExtendedOverlayItem attributes. It will be typically a DefaultInfoWindow. 
+	 * Set it to null to remove an existing InfoWindow. 
 	 */
-	public void setInfoWindow(int layoutResId, MapView mapView){
-		if (layoutResId != 0)
-			mBubble = new DefaultInfoWindow(layoutResId, mapView);
-		else 
-			mBubble = null;
+	public void setInfoWindow(InfoWindow infoWindow){
+		mInfoWindow = infoWindow; //new DefaultInfoWindow(layoutResId, mapView);
 	}
 	
-	/**
-	 * This method draws the polygon. Note - highly optimized to handle long paths, proceed with care.
-	 * Should be fine up to 10K points.
-	 */
 	@Override protected void draw(Canvas canvas, MapView mapView, boolean shadow) {
 
 		if (shadow) {
@@ -270,22 +272,36 @@ public class Polygon extends Overlay {
 		
 		canvas.drawPath(mPath, mFillPaint);
 		canvas.drawPath(mPath, mOutlinePaint);
+		
+		//prepare mPath for click detection: 
+		//As Region implementation (SkRegion.h) is based on "int32_t", it doesn't support values > 32768. 
+		//(Path doesn't have this issue, it's based on SkScalar, with float values)
+		//So we offset the Path to have (left, top) = (0, 0):
+		mPath.computeBounds(mBounds, true);
+		mPath.offset(-mBounds.left, -mBounds.top);
 	}
 	
+	/** Important note: this function returns correct results only if the Polygon has been drawn before, 
+	 * and if the MapView has not changed. 
+	 * @param event
+	 * @param mapView
+	 * @return true if the Polygon contains the event position. 
+	 */
 	public boolean contains(MotionEvent event, MapView mapView){
 		if (mPath.isEmpty())
 			return false;
 		Projection pj = mapView.getProjection();
-		Point point = pj.fromMapPixels((int)event.getX(), (int)event.getY(), null);
-		RectF bounds = new RectF();
-		mPath.computeBounds(bounds, true);
+		pj.fromMapPixels((int)event.getX(), (int)event.getY(), mTempPoint1);
 		Region region = new Region();
-		region.setPath(mPath, new Region((int) bounds.left, (int) bounds.top, (int) bounds.right, (int) bounds.bottom));
-		return region.contains(point.x, point.y);
+		//Path has been computed in #draw (we assume that if it can be clicked, it has been drawn before). 
+		//Then it has been offset to have (left, top) = (0,0)
+		region.setPath(mPath, new Region(0, 0, 
+				(int) (mBounds.right-mBounds.left), (int) (mBounds.bottom-mBounds.top)));
+		return region.contains((int)(mTempPoint1.x-mBounds.left), (int)(mTempPoint1.y-mBounds.top));
 	}
 	
 	@Override public boolean onSingleTapConfirmed(final MotionEvent event, final MapView mapView){
-		if (mBubble == null)
+		if (mInfoWindow == null)
 			//no support for tap:
 			return false;
 		boolean touched = contains(event, mapView);
@@ -294,7 +310,7 @@ public class Polygon extends Overlay {
 			GeoPoint position = (GeoPoint)pj.fromPixels(event.getX(), event.getY());
 			//as DefaultInfoWindow is expecting an ExtendedOverlayItem, build an ExtendedOverlayItem with needed information:
 			ExtendedOverlayItem item = new ExtendedOverlayItem(mTitle, mSnippet, position);
-			mBubble.open(item, item.getPoint(), 0, 0);
+			mInfoWindow.open(item, item.getPoint(), 0, 0);
 		}
 		return touched;
 	}

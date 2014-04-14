@@ -20,15 +20,21 @@ import android.widget.TextView;
  */
 public class MarkerInfoWindow extends InfoWindow {
 
-	static int mTitleId=0, mDescriptionId=0, mSubDescriptionId=0, mImageId=0; //resource ids
+	static int mTitleId=BonusPackHelper.UNDEFINED_RES_ID, 
+			mDescriptionId=BonusPackHelper.UNDEFINED_RES_ID, 
+			mSubDescriptionId=BonusPackHelper.UNDEFINED_RES_ID, 
+			mImageId=BonusPackHelper.UNDEFINED_RES_ID; //resource ids
 
+	protected Marker mMarkerRef; //reference to the Marker on which it is opened. Null if none. 
+	
 	private static void setResIds(Context context){
 		String packageName = context.getPackageName(); //get application package name
 		mTitleId = context.getResources().getIdentifier("id/bubble_title", null, packageName);
 		mDescriptionId = context.getResources().getIdentifier("id/bubble_description", null, packageName);
 		mSubDescriptionId = context.getResources().getIdentifier("id/bubble_subdescription", null, packageName);
 		mImageId = context.getResources().getIdentifier("id/bubble_image", null, packageName);
-		if (mTitleId == 0 || mDescriptionId == 0 || mSubDescriptionId == 0 || mImageId == 0) {
+		if (mTitleId == BonusPackHelper.UNDEFINED_RES_ID || mDescriptionId == BonusPackHelper.UNDEFINED_RES_ID 
+				|| mSubDescriptionId == BonusPackHelper.UNDEFINED_RES_ID || mImageId == BonusPackHelper.UNDEFINED_RES_ID) {
 			Log.e(BonusPackHelper.LOG_TAG, "MarkerInfoWindow: unable to get res ids in "+packageName);
 		}
 	}
@@ -36,7 +42,7 @@ public class MarkerInfoWindow extends InfoWindow {
 	public MarkerInfoWindow(int layoutResId, MapView mapView) {
 		super(layoutResId, mapView);
 		
-		if (mTitleId == 0)
+		if (mTitleId == BonusPackHelper.UNDEFINED_RES_ID)
 			setResIds(mapView.getContext());
 		
 		//default behavior: close it when clicking on the bubble:
@@ -50,20 +56,20 @@ public class MarkerInfoWindow extends InfoWindow {
 	}
 	
 	@Override public void onOpen(Object item) {
-		Marker marker = (Marker)item;
-		String title = marker.getTitle();
+		mMarkerRef = (Marker)item;
+		String title = mMarkerRef.getTitle();
 		if (title == null)
 			title = "";
 		((TextView)mView.findViewById(mTitleId /*R.id.title*/)).setText(title);
 		
-		String snippet = marker.getSnippet();
+		String snippet = mMarkerRef.getSnippet();
 		if (snippet == null)
 			snippet = "";
 		((TextView)mView.findViewById(mDescriptionId /*R.id.description*/)).setText(snippet);
 		
 		//handle sub-description, hidding or showing the text view:
 		TextView subDescText = (TextView)mView.findViewById(mSubDescriptionId);
-		String subDesc = marker.getSubDescription();
+		String subDesc = mMarkerRef.getSubDescription();
 		if (subDesc != null && !("".equals(subDesc))){
 			subDescText.setText(subDesc);
 			subDescText.setVisibility(View.VISIBLE);
@@ -73,7 +79,7 @@ public class MarkerInfoWindow extends InfoWindow {
 
 		//handle image
 		ImageView imageView = (ImageView)mView.findViewById(mImageId /*R.id.image*/);
-		Drawable image = marker.getImage();
+		Drawable image = mMarkerRef.getImage();
 		if (image != null){
 			imageView.setImageDrawable(image); //or setBackgroundDrawable(image)?
 			imageView.setVisibility(View.VISIBLE);
@@ -82,7 +88,8 @@ public class MarkerInfoWindow extends InfoWindow {
 	}
 
 	@Override public void onClose() {
-		//by default, do nothing
+		mMarkerRef = null;
+		//by default, do nothing else
 	}
 	
 }

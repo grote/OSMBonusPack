@@ -9,7 +9,6 @@ import org.json.JSONObject;
 import org.osmdroid.bonuspack.overlays.Marker;
 import org.osmdroid.bonuspack.overlays.Polygon;
 import org.osmdroid.bonuspack.overlays.Polyline;
-import org.osmdroid.util.BoundingBoxE6;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.Overlay;
@@ -31,16 +30,16 @@ public class KmlPlacemark extends KmlFeature implements Cloneable, Parcelable {
 	}
 	
 	/**
-	 * Create the KmlFeature as a KML Point.  
-	 * @param position position of the point
+	 * constructs a Placemark with a Point Geometry.  
+	 * @param position position of the Point
 	 */
 	public KmlPlacemark(GeoPoint position){
 		this();
 		mGeometry = new KmlPoint(position);
-		mBB = new BoundingBoxE6(position.getLatitudeE6(), position.getLongitudeE6(), position.getLatitudeE6(), position.getLongitudeE6());
+		mBB = mGeometry.getBoundingBox();
 	}
 	
-	/** Create the KML Placemark from a Marker, as a KML Point */
+	/** constructs a Placemark from a Marker, as a KML Point */
 	public KmlPlacemark(Marker marker){
 		this(marker.getPosition());
 		mName = marker.getTitle();
@@ -49,7 +48,7 @@ public class KmlPlacemark extends KmlFeature implements Cloneable, Parcelable {
 		//TODO: Style / IconStyle => transparency, hotspot, bearing. 
 	}
 
-	/** Create the KML Placemark from a Polygon overlay, as a KML Polygon */
+	/** constructs a Placemark from a Polygon overlay, as a KML Polygon */
 	public KmlPlacemark(Polygon polygon, KmlDocument kmlDoc){
 		this();
 		mName = polygon.getTitle();
@@ -57,7 +56,7 @@ public class KmlPlacemark extends KmlFeature implements Cloneable, Parcelable {
 		mGeometry = new KmlPolygon();
 		mGeometry.mCoordinates = (ArrayList<GeoPoint>)polygon.getPoints();
 		((KmlPolygon)mGeometry).mHoles = (ArrayList<ArrayList<GeoPoint>>)polygon.getHoles();
-		mBB = BoundingBoxE6.fromGeoPoints(mGeometry.mCoordinates);
+		mBB = mGeometry.getBoundingBox();
 		mVisibility = polygon.isEnabled();
 		//Style:
 		Style style = new Style();
@@ -66,13 +65,13 @@ public class KmlPlacemark extends KmlFeature implements Cloneable, Parcelable {
 		mStyle = kmlDoc.addStyle(style);
 	}
 
-	/** Create the KML Placemark from a Polyline overlay, as a KML LineString */
+	/** constructs a Placemark from a Polyline overlay, as a KML LineString */
 	public KmlPlacemark(Polyline polyline, KmlDocument kmlDoc){
 		this();
 		mName = "LineString - "+polyline.getNumberOfPoints()+" points";
 		mGeometry = new KmlLineString();
 		mGeometry.mCoordinates = (ArrayList<GeoPoint>)polyline.getPoints();
-		mBB = BoundingBoxE6.fromGeoPoints(mGeometry.mCoordinates);
+		mBB = mGeometry.getBoundingBox();
 		mVisibility = polyline.isEnabled();
 		//Style:
 		Style style = new Style();
@@ -87,11 +86,8 @@ public class KmlPlacemark extends KmlFeature implements Cloneable, Parcelable {
 		JSONObject geometry = json.optJSONObject("geometry");
 		if (geometry != null) {
 			mGeometry = KmlGeometry.parseGeoJSON(geometry);
-			if (mGeometry instanceof KmlMultiGeometry){
-				//TODO: compute mGeometry bounding box recursively...
-			} else {
-				mBB = BoundingBoxE6.fromGeoPoints(mGeometry.mCoordinates);
-			}
+			if (mGeometry != null)
+				mBB = mGeometry.getBoundingBox();
         }
 		//Parse properties:
 		JSONObject properties = json.optJSONObject("properties");
