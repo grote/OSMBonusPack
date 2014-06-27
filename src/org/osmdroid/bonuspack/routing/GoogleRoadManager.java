@@ -60,7 +60,7 @@ public class GoogleRoadManager extends RoadManager {
 	}
 	
 	/** 
-	 * @param waypoints: list of GeoPoints. Must have at least 2 entries, start and end points. 
+	 * @param waypoints list of GeoPoints. Must have at least 2 entries, start and end points. 
 	 * @return the road
 	 */
 	@Override public Road getRoad(ArrayList<GeoPoint> waypoints) {
@@ -182,8 +182,8 @@ class GoogleDirectionsHandler extends DefaultHandler {
 		} else if (localName.equals("html_instructions")) {
 			if (isStep){
 				String value = mStringBuilder.toString();
-				value = value.replaceAll("<[^>]*>", " "); //remove everything in <...>
-				value = value.replaceAll("&nbsp;", " ");
+				//value = value.replaceAll("<[^>]*>", " "); //remove everything in <...>
+				//value = value.replaceAll("&nbsp;", " ");
 				mNode.mInstructions = value;
 				//Log.d(BonusPackHelper.LOG_TAG, mString);
 			}

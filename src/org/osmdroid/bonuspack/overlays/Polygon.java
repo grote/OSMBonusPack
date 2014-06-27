@@ -6,8 +6,10 @@ import org.osmdroid.DefaultResourceProxyImpl;
 import org.osmdroid.ResourceProxy;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
-import org.osmdroid.views.MapView.Projection;
+import org.osmdroid.views.Projection;
+import org.osmdroid.views.overlay.NonAcceleratedOverlay;
 import org.osmdroid.views.overlay.Overlay;
+
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -27,7 +29,7 @@ import android.view.MotionEvent;
  * @author Viesturs Zarins, Martin Pearman for efficient PathOverlay.draw method
  * @author M.Kergall: transformation from PathOverlay to Polygon
  */
-public class Polygon extends Overlay {
+public class Polygon extends Overlay /*NonAcceleratedOverlay */ {
 
 	/** inner class holding one ring: the polygon outline, or a hole inside the polygon */
 	class LinearRing {
@@ -83,7 +85,7 @@ public class Polygon extends Overlay {
 			if (!mPrecomputed){
 				for (int i=0; i<size; i++) {
 					final Point pt = mConvertedPoints.get(i);
-					pj.toMapPixelsProjected(pt.x, pt.y, pt);
+					pj.toProjectedPixels(pt.x, pt.y, pt);
 				}
 				mPrecomputed = true;
 			}
@@ -91,7 +93,7 @@ public class Polygon extends Overlay {
 			Point projectedPoint0 = mConvertedPoints.get(0); // points from the points list
 			Point projectedPoint1;
 			
-			Point screenPoint0 = pj.toMapPixelsTranslated(projectedPoint0, mTempPoint1); // points on screen
+			Point screenPoint0 = pj.toPixelsFromProjected(projectedPoint0, mTempPoint1); // points on screen
 			Point screenPoint1;
 			
 			mPath.moveTo(screenPoint0.x, screenPoint0.y);
@@ -99,7 +101,7 @@ public class Polygon extends Overlay {
 			for (int i=0; i<size; i++) {
 				// compute next points
 				projectedPoint1 = mConvertedPoints.get(i);
-				screenPoint1 = pj.toMapPixelsTranslated(projectedPoint1, mTempPoint2);
+				screenPoint1 = pj.toPixelsFromProjected(projectedPoint1, mTempPoint2);
 
 				if (Math.abs(screenPoint1.x - screenPoint0.x) + Math.abs(screenPoint1.y - screenPoint0.y) <= 1) {
 					// skip this point, too close to previous point
@@ -126,7 +128,6 @@ public class Polygon extends Overlay {
 	protected Paint mOutlinePaint;
 
 	private final Path mPath = new Path(); //Path drawn is kept for click detection
-	private final RectF mBounds = new RectF(); //bounds of the Path
 
 	private final Point mTempPoint1 = new Point();
 	private final Point mTempPoint2 = new Point();
@@ -228,6 +229,20 @@ public class Polygon extends Overlay {
 		}
 		return result;
 	}
+
+	/**
+	 * Set the points of the Polygon as a circle. 
+	 * @param center center of the circle
+	 * @param radiusInMeters
+	 */
+	public void setPointsAsCircle(GeoPoint center, double radiusInMeters){
+		ArrayList<GeoPoint> circlePoints = new ArrayList<GeoPoint>(360/6);
+		for (int f = 0; f < 360; f += 6){
+			GeoPoint onCircle = center.destinationPoint(radiusInMeters, f);
+			circlePoints.add(onCircle);
+		}
+		setPoints(circlePoints);
+	}
 	
 	public void setTitle(String title){
 		mTitle = title;
@@ -272,17 +287,10 @@ public class Polygon extends Overlay {
 		
 		canvas.drawPath(mPath, mFillPaint);
 		canvas.drawPath(mPath, mOutlinePaint);
-		
-		//prepare mPath for click detection: 
-		//As Region implementation (SkRegion.h) is based on "int32_t", it doesn't support values > 32768. 
-		//(Path doesn't have this issue, it's based on SkScalar, with float values)
-		//So we offset the Path to have (left, top) = (0, 0):
-		mPath.computeBounds(mBounds, true);
-		mPath.offset(-mBounds.left, -mBounds.top);
 	}
 	
 	/** Important note: this function returns correct results only if the Polygon has been drawn before, 
-	 * and if the MapView has not changed. 
+	 * and if the MapView positioning has not changed. 
 	 * @param event
 	 * @param mapView
 	 * @return true if the Polygon contains the event position. 
@@ -290,14 +298,13 @@ public class Polygon extends Overlay {
 	public boolean contains(MotionEvent event, MapView mapView){
 		if (mPath.isEmpty())
 			return false;
-		Projection pj = mapView.getProjection();
-		pj.fromMapPixels((int)event.getX(), (int)event.getY(), mTempPoint1);
+		RectF bounds = new RectF(); //bounds of the Path
+		mPath.computeBounds(bounds, true);
 		Region region = new Region();
 		//Path has been computed in #draw (we assume that if it can be clicked, it has been drawn before). 
-		//Then it has been offset to have (left, top) = (0,0)
-		region.setPath(mPath, new Region(0, 0, 
-				(int) (mBounds.right-mBounds.left), (int) (mBounds.bottom-mBounds.top)));
-		return region.contains((int)(mTempPoint1.x-mBounds.left), (int)(mTempPoint1.y-mBounds.top));
+		region.setPath(mPath, new Region((int)bounds.left, (int)bounds.top, 
+				(int) (bounds.right), (int) (bounds.bottom)));
+		return region.contains((int)event.getX(), (int)event.getY());
 	}
 	
 	@Override public boolean onSingleTapConfirmed(final MotionEvent event, final MapView mapView){
@@ -307,11 +314,12 @@ public class Polygon extends Overlay {
 		boolean touched = contains(event, mapView);
 		if (touched){
 			Projection pj = mapView.getProjection();
-			GeoPoint position = (GeoPoint)pj.fromPixels(event.getX(), event.getY());
+			GeoPoint position = (GeoPoint)pj.fromPixels((int)event.getX(), (int)event.getY());
 			//as DefaultInfoWindow is expecting an ExtendedOverlayItem, build an ExtendedOverlayItem with needed information:
 			ExtendedOverlayItem item = new ExtendedOverlayItem(mTitle, mSnippet, position);
 			mInfoWindow.open(item, item.getPoint(), 0, 0);
 		}
 		return touched;
 	}
+
 }

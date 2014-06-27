@@ -4,17 +4,19 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.List;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
 import org.osmdroid.bonuspack.clustering.MarkerClusterer;
 import org.osmdroid.bonuspack.overlays.FolderOverlay;
 import org.osmdroid.bonuspack.overlays.GroundOverlay;
 import org.osmdroid.bonuspack.overlays.Marker;
 import org.osmdroid.bonuspack.overlays.Polygon;
 import org.osmdroid.bonuspack.overlays.Polyline;
+import org.osmdroid.bonuspack.utils.BonusPackHelper;
+import org.osmdroid.util.BoundingBoxE6;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.Overlay;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import android.content.Context;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -48,18 +50,30 @@ public class KmlFolder extends KmlFeature implements Cloneable, Parcelable {
 	}
 	
 	/** GeoJSON constructor */
-	public KmlFolder(JSONObject json){
+	public KmlFolder(JsonObject json){
 		this();
-		JSONArray features = json.optJSONArray("features");
-        if (features != null) {
-            for (int i = 0; i < features.length(); i++) {
-                JSONObject featureJSON = features.optJSONObject(i);
-                if (featureJSON != null) {
-                	KmlFeature feature = KmlFeature.parseGeoJSON(featureJSON);
-                    add(feature);
-                }
-            }
-        }
+		if (json.has("features")){
+			JsonArray features = json.get("features").getAsJsonArray();
+			for (JsonElement jsonFeature:features) {
+		    	KmlFeature feature = KmlFeature.parseGeoJSON(jsonFeature.getAsJsonObject());
+		        add(feature);
+		    }
+		}
+	}
+	
+	@Override public BoundingBoxE6 getBoundingBox(){
+		BoundingBoxE6 BB = null;
+		for (KmlFeature item:mItems) {
+			BoundingBoxE6 itemBB = item.getBoundingBox();
+			if (itemBB != null){
+				if (BB == null){
+					BB = BonusPackHelper.cloneBoundingBoxE6(itemBB);
+				} else {
+					BB = BonusPackHelper.concatBoundingBoxE6(itemBB, BB);
+				}
+			}
+		}
+		return BB;
 	}
 	
 	/** 
@@ -98,13 +112,12 @@ public class KmlFolder extends KmlFeature implements Cloneable, Parcelable {
 			return false;
 		}
 		mItems.add(kmlItem);
-		updateBoundingBoxWith(kmlItem.mBB);
 		return true;
 	}
 	
 	/** 
 	 * Adds all overlays inside this, converting them in KmlFeatures. 
-	 * @param list of overlays to add
+	 * @param overlays list of overlays to add
 	 * @param kmlDoc
 	 */
 	public void addOverlays(List<? extends Overlay> overlays, KmlDocument kmlDoc){
@@ -118,7 +131,6 @@ public class KmlFolder extends KmlFeature implements Cloneable, Parcelable {
 	/** Add an item in the KML Folder, at the end. */
 	public void add(KmlFeature item){
 		mItems.add(item);
-		updateBoundingBoxWith(item.mBB);
 	}
 	
 	/** 
@@ -128,11 +140,6 @@ public class KmlFolder extends KmlFeature implements Cloneable, Parcelable {
 	 */
 	public KmlFeature removeItem(int itemPosition){
 		KmlFeature removed = mItems.remove(itemPosition);
-		//refresh bounding box from scratch:
-		mBB = null;
-		for (KmlFeature item:mItems) {
-			updateBoundingBoxWith(item.mBB);
-		}
 		return removed;
 	}
 	
@@ -140,8 +147,8 @@ public class KmlFolder extends KmlFeature implements Cloneable, Parcelable {
 	 * Build a FolderOverlay, containing (recursively) overlays from all items of this Folder. 
 	 * @param map
 	 * @param defaultStyle to apply when an item has no Style defined. 
+	 * @param styler to apply
 	 * @param kmlDocument for Styles
-	 * @param supportVisibility
 	 * @return the FolderOverlay built
 	 */
 	@Override public Overlay buildOverlay(MapView map, Style defaultStyle, Styler styler, KmlDocument kmlDocument){
@@ -170,18 +177,13 @@ public class KmlFolder extends KmlFeature implements Cloneable, Parcelable {
 		}
 	}
 
-	public JSONObject geoJSONNamedCRS(String crsName){
-		try {
-			JSONObject crs = new JSONObject();
-			crs.put("type", "name");
-			JSONObject properties = new JSONObject();
-			properties.put("name", crsName);
-			crs.put("properties", properties);
-			return crs;
-		} catch (JSONException e) {
-			e.printStackTrace();
-			return null;
-		}
+	public JsonObject geoJSONNamedCRS(String crsName){
+		JsonObject crs = new JsonObject();
+		crs.addProperty("type", "name");
+		JsonObject properties = new JsonObject();
+		properties.addProperty("name", crsName);
+		crs.add("properties", properties);
+		return crs;
 	}
 	
 	/**
@@ -191,35 +193,30 @@ public class KmlFolder extends KmlFeature implements Cloneable, Parcelable {
 	 * This is flattening the resulting GeoJSON hierarchy. 
 	 * @return this as a GeoJSON FeatureCollection object. 
 	 */
-	@Override public JSONObject asGeoJSON(boolean isRoot){
-		try {
-			JSONObject json = new JSONObject();
-			if (isRoot){
-				json.put("crs", geoJSONNamedCRS("urn:ogc:def:crs:OGC:1.3:CRS84"));
-			}
-			JSONArray features = new JSONArray();
-			for (KmlFeature item:mItems){
-				JSONObject subJson = item.asGeoJSON(false);
-				if (item instanceof KmlFolder){
-					//Flatten the item contents:
-					JSONArray subFeatures = subJson.optJSONArray("features");
-					if (features != null){
-						for (int i=0; i<subFeatures.length(); i++){
-							JSONObject j = subFeatures.getJSONObject(i);
-							features.put(j);
-						}
-					}
-				} else if (subJson != null) {
-					features.put(subJson);
-				}
-			}
-			json.put("features", features);
-			json.put("type", "FeatureCollection");
-			return json;
-		} catch (JSONException e) {
-			e.printStackTrace();
-			return null;
+	@Override public JsonObject asGeoJSON(boolean isRoot){
+		JsonObject json = new JsonObject();
+		if (isRoot){
+			json.add("crs", geoJSONNamedCRS("urn:ogc:def:crs:OGC:1.3:CRS84"));
 		}
+		JsonArray features = new JsonArray();
+		for (KmlFeature item:mItems){
+			JsonObject subJson = item.asGeoJSON(false);
+			if (item instanceof KmlFolder){
+				//Flatten the item contents:
+				JsonArray subFeatures = subJson.getAsJsonArray("features");
+				if (subFeatures != null){
+					for (int i=0; i<subFeatures.size(); i++){
+						JsonElement j = subFeatures.get(i);
+						features.add(j);
+					}
+				}
+			} else if (subJson != null) {
+				features.add(subJson);
+			}
+		}
+		json.add("features", features);
+		json.addProperty("type", "FeatureCollection");
+		return json;
 	}
 	
 	//Cloneable implementation ------------------------------------

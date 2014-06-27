@@ -2,15 +2,13 @@ package org.osmdroid.bonuspack.kml;
 
 import java.io.IOException;
 import java.io.Writer;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
 import org.osmdroid.bonuspack.kml.KmlFeature.Styler;
 import org.osmdroid.bonuspack.overlays.Polyline;
 import org.osmdroid.util.BoundingBoxE6;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.Overlay;
-
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import android.content.Context;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -25,9 +23,9 @@ public class KmlLineString extends KmlGeometry {
 		super();
 	}
 	
-	public KmlLineString(JSONObject json){
+	public KmlLineString(JsonObject json){
 		this();
-		JSONArray coordinates = json.optJSONArray("coordinates");
+		JsonArray coordinates = json.get("coordinates").getAsJsonArray();
 		mCoordinates = KmlGeometry.parseGeoJSONPositions(coordinates);
 	}
 	
@@ -35,9 +33,11 @@ public class KmlLineString extends KmlGeometry {
 			KmlDocument kmlDocument){
 		Style style = kmlDocument.getStyle(kmlPlacemark.mStyle);
 		if (style != null){
-			lineStringOverlay.setPaint(style.getOutlinePaint());
+			lineStringOverlay.setColor(style.getOutlinePaint().getColor());
+			lineStringOverlay.setWidth(style.getOutlinePaint().getStrokeWidth());
 		} else if (defaultStyle!=null && defaultStyle.mLineStyle!=null){ 
-			lineStringOverlay.setPaint(defaultStyle.getOutlinePaint());
+			lineStringOverlay.setColor(defaultStyle.getOutlinePaint().getColor());
+			lineStringOverlay.setWidth(defaultStyle.getOutlinePaint().getStrokeWidth());
 		}
 		lineStringOverlay.setEnabled(kmlPlacemark.mVisibility);
 	}
@@ -66,16 +66,11 @@ public class KmlLineString extends KmlGeometry {
 		}
 	}
 	
-	@Override public JSONObject asGeoJSON(){
-		try {
-			JSONObject json = new JSONObject();
-			json.put("type", "LineString");
-			json.put("coordinates", KmlGeometry.geoJSONCoordinates(mCoordinates));
-			return json;
-		} catch (JSONException e) {
-			e.printStackTrace();
-			return null;
-		}
+	@Override public JsonObject asGeoJSON(){
+		JsonObject json = new JsonObject();
+		json.addProperty("type", "LineString");
+		json.add("coordinates", KmlGeometry.geoJSONCoordinates(mCoordinates));
+		return json;
 	}
 	
 	@Override public BoundingBoxE6 getBoundingBox(){
