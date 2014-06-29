@@ -3,19 +3,19 @@ buildscript {
 		mavenCentral()
 	}
 	dependencies {
-		classpath 'com.android.tools.build:gradle:0.11.+'
+		classpath 'com.android.tools.build:gradle:0.12.+'
 	}
 }
 
 apply plugin: 'android-library'
 
 android {
-    compileSdkVersion 4
+    compileSdkVersion 19
     buildToolsVersion "19.1.0"
 
     defaultConfig {
         minSdkVersion 4
-        targetSdkVersion 4
+        targetSdkVersion 19
     }
 
 	sourceSets {
@@ -40,6 +40,7 @@ android {
 
 dependencies {
     compile 'com.android.support:support-v4:+'
-    compile files('libs/osmdroid-android-4.1.jar')
+    compile files('libs/osmdroid-android-4.2.jar')
     compile files('libs/slf4j-android-1.5.8.jar')
+    compile files('libs/gson-2.2.4.jar')
 }
