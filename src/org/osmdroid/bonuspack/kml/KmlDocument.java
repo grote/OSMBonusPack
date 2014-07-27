@@ -4,14 +4,17 @@ import java.io.BufferedInputStream;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import javax.xml.parsers.SAXParser;
@@ -37,8 +40,8 @@ import android.util.Log;
 /**
  * Object handling a whole KML document. 
  * This is the entry point to read, handle and save KML content. <br>
- * Features are stored in the kmlRoot attribute, which is a KmlFolder. 
- * Shared components (like styles) are stored in specific attributes. <br>
+ * Features are stored in the kmlRoot attribute, which is a KmlFolder. <br>
+ * Also contains the Shared Styles, referenced in Features using a styleId. <br>
  * 
  * Supports the following KML Geometry: Point, LineString, Polygon and MultiGeometry. <br>
  * Supports KML Document and Folder hierarchy. <br>
@@ -58,18 +61,34 @@ public class KmlDocument implements Parcelable {
 
 	/** the root of KML features contained in this document */
 	public KmlFolder mKmlRoot;
-	/** list of shared Styles in this document */
+	/** Shared Styles in this document. String key is the styleId. */
 	protected HashMap<String, StyleSelector> mStyles;
 	protected int mMaxStyleId;
+	
+	/** Local File that has been loaded. null if this is not a local file. */
+	protected File mLocalFile;
 
 	/** default constructor, with the kmlRoot as an empty Folder */
 	public KmlDocument(){
 		mStyles = new HashMap<String, StyleSelector>();
 		mMaxStyleId = 0;
 		mKmlRoot = new KmlFolder();
+		mLocalFile = null;
+	}
+
+	/** @return the Shared Styles */
+	public HashMap<String, StyleSelector> getStyles(){
+		return mStyles;
+	}
+
+	/** @return the list of all Shared Styles ids */
+	public String[] getStylesList(){
+		Set<String> set = mStyles.keySet();
+		String[] array = new String[0];
+		return set.toArray(array);
 	}
 	
-	/** @return the shared Style associated to the styleId, or null if none.
+	/** @return the Shared Style associated to the styleId, or null if none.
 	 *  If this is a StyleMap, returns its "normal" Style (if any). */
 	public Style getStyle(String styleId){
 		StyleSelector s = mStyles.get(styleId);
@@ -81,7 +100,7 @@ public class KmlDocument implements Parcelable {
 			return (Style)s;
 	}
 	
-	/** put the StyleSelector (Style or StyleMap) in the list of shared Styles, associated to its styleId */
+	/** put the StyleSelector (Style or StyleMap) in the list of Shared Styles, associated to its styleId */
 	public void putStyle(String styleId, StyleSelector styleSelector){
 		//Check if maxStyleId needs an update:
 		try {
@@ -94,8 +113,8 @@ public class KmlDocument implements Parcelable {
 	}
 	
 	/**
-	 * Add the StyleSelector in the shared Styles
-	 * @param style to add
+	 * Add the StyleSelector in the Shared Styles
+	 * @param styleSelector to add
 	 * @return the unique styleId assigned for this style
 	 */
 	public String addStyle(StyleSelector styleSelector){
@@ -103,6 +122,11 @@ public class KmlDocument implements Parcelable {
 		String newId = ""+mMaxStyleId;
 		putStyle(newId, styleSelector);
 		return newId;
+	}
+	
+	/** @return the local File that has been opened (KML, KMZ or GeoJSON), or null if this is not a local file */
+	public File getLocalFile(){
+		return mLocalFile;
 	}
 	
 	/** similar to GeoPoint.fromInvertedDoubleString, with exceptions handling */
@@ -126,28 +150,6 @@ public class KmlDocument implements Parcelable {
 			return null;
 		}
 	}
-	
-	/*
-	protected static boolean parseKmlCoord2(String input, int tuple[]){
-		int end1 = input.indexOf(',');
-		int end2 = input.indexOf(',', end1+1);
-		try {
-			if (end2 == -1){
-				tuple[1] = (int)(Double.parseDouble(input.substring(0, end1))*1E6); //lon
-				tuple[0] = (int)(Double.parseDouble(input.substring(end1+1, input.length()))*1E6); //lat
-			} else {
-				tuple[1] = (int)(Double.parseDouble(input.substring(0, end1))*1E6);
-				tuple[0] = (int)(Double.parseDouble(input.substring(end1+1, end2))*1E6);
-				tuple[2] = (int)(Double.parseDouble(input.substring(end2+1, input.length()))*1E6);
-			}
-			return true;
-		} catch (NumberFormatException e) {
-			return false;
-		} catch (IndexOutOfBoundsException e) {
-			return false;
-		}
-	}
-	*/
 	
 	/** KML coordinates are: lon,lat{,alt} tuples separated by separators (space, tab, cr). */
 	protected static ArrayList<GeoPoint> parseKmlCoordinates(String input){
@@ -182,57 +184,8 @@ public class KmlDocument implements Parcelable {
 		}
 		ArrayList<GeoPoint> coordinates = new ArrayList<GeoPoint>(tmpCoords.size());
 		coordinates.addAll(tmpCoords);
-		//Various attempts to optimize - without significant result
-		/*
-		String[] splitted = input.split("\\s+");
-		ArrayList<GeoPoint> coordinates = new ArrayList<GeoPoint>(splitted.length);
-		for (int i=0; i<splitted.length; i++){
-			GeoPoint p = parseKmlCoord(splitted[i]);
-			if (p != null)
-				coordinates.add(p);
-		}
-		*/
-		/*
-		String[] splitted = input.split("\\s+");
-		int[][] coords = new int[splitted.length][3];
-		int end = 0;
-		for (int i=0; i<splitted.length; i++){
-			boolean ok = parseKmlCoord2(splitted[i], coords[end]);
-			if (ok)
-				end++;
-		}
-		ArrayList<GeoPoint> coordinates = new ArrayList<GeoPoint>(10);
-		if (end > 0)
-			coordinates.add(new GeoPoint(coords[0][0], coords[0][1], coords[0][2]));
-		*/
 		return coordinates;
 	}
-	
-	/* nice utils for DOM parsing - to keep somewhere else
-	public static String getChildText(Element element) {
-		StringBuilder builder = new StringBuilder();
-		NodeList list = element.getChildNodes();
-		for(int i = 0; i < list.getLength(); i++) {
-			Node node = list.item(i);
-			short type = node.getNodeType();
-			if(type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
-				builder.append(node.getNodeValue());
-			}
-		}
-		return builder.toString();
-	}
-	
-	public static List<Element> getChildrenByTagName(Element parent, String name) {
-		List<Element> nodeList = new ArrayList<Element>();
-		boolean getAll = name.equals("*");
-		for (Node child = parent.getFirstChild(); child != null; child = child.getNextSibling()) {
-			if (child.getNodeType() == Node.ELEMENT_NODE && (getAll || name.equals(child.getNodeName()))) {
-				nodeList.add((Element) child);
-			}
-		}
-	    return nodeList;
-	}
-	*/
 	
 	/**
 	 * Parse a KML document from a url, and build the KML structure in kmlRoot. 
@@ -250,7 +203,7 @@ public class KmlDocument implements Parcelable {
 		if (stream == null){
 			ok = false;
 		} else {
-			ok = parseKMLStream(stream, url, null);
+			ok = parseKMLStream(stream, null);
 		}
 		connection.close();
 		//Log.d(BonusPackHelper.LOG_TAG, "KmlProvider.parseUrl - end");
@@ -279,15 +232,16 @@ public class KmlDocument implements Parcelable {
 	 * Parse a KML document from a file, to build the KML structure. 
 	 * @param file full file path
 	 * @return true if OK, false if any error. 
-	 * @see parseUrl
+	 * @see #parseUrl
 	 */
 	public boolean parseKMLFile(File file){
-		Log.d(BonusPackHelper.LOG_TAG, "KmlProvider.parseKMLFile:"+file.getAbsolutePath());
+		mLocalFile = file;
+		Log.d(BonusPackHelper.LOG_TAG, "KmlProvider.parseKMLFile:"+mLocalFile.getAbsolutePath());
 		InputStream stream = null;
 		boolean ok;
 		try {
-			stream = new BufferedInputStream(new FileInputStream(file));
-			ok = parseKMLStream(stream, file.getAbsolutePath(), null);
+			stream = new BufferedInputStream(new FileInputStream(mLocalFile));
+			ok = parseKMLStream(stream, null);
 			stream.close();
 		} catch (Exception e){
 			e.printStackTrace();
@@ -303,9 +257,10 @@ public class KmlDocument implements Parcelable {
 	 * @return true if OK. 
 	 */
 	public boolean parseKMZFile(File file){
-		Log.d(BonusPackHelper.LOG_TAG, "KmlProvider.parseKMZFile:"+file.getAbsolutePath());
+		mLocalFile = file;
+		Log.d(BonusPackHelper.LOG_TAG, "KmlProvider.parseKMZFile:"+mLocalFile.getAbsolutePath());
 		try {
-			ZipFile kmzFile = new ZipFile(file);
+			ZipFile kmzFile = new ZipFile(mLocalFile);
 			String rootFileName = null;
 			//Iterate in the KMZ to find the first ".kml" file:
 			Enumeration<? extends ZipEntry> list = kmzFile.entries();
@@ -319,9 +274,8 @@ public class KmlDocument implements Parcelable {
 			if (rootFileName != null){
 				ZipEntry rootEntry = kmzFile.getEntry(rootFileName);
 				InputStream stream = kmzFile.getInputStream(rootEntry);
-				String fullFilePath = file.getAbsolutePath();
 				Log.d(BonusPackHelper.LOG_TAG, "KML root:"+rootFileName);
-				result = parseKMLStream(stream, fullFilePath, kmzFile);
+				result = parseKMLStream(stream, kmzFile);
 			} else {
 				Log.d(BonusPackHelper.LOG_TAG, "No .kml entry found.");
 				result = false;
@@ -337,13 +291,11 @@ public class KmlDocument implements Parcelable {
 	/**
 	 * Parse a KML content from an InputStream. 
 	 * @param stream the InputStream
-	 * @param fullFilePath of the content, which is used inside the parser to handle "relative" files, to determine their full file path. 
-	 * Note that relative files are supported only for regular files. 
 	 * @param kmzContainer KMZ file containing this KML file - or null if not applicable. 
 	 * @return true if OK, false if any error. 
 	 */
-	public boolean parseKMLStream(InputStream stream, String fullFilePath, ZipFile kmzContainer){
-		KmlSaxHandler handler = new KmlSaxHandler(fullFilePath, kmzContainer);
+	public boolean parseKMLStream(InputStream stream, ZipFile kmzContainer){
+		KmlSaxHandler handler = new KmlSaxHandler(mLocalFile, kmzContainer);
 		boolean ok;
 		try {
 			SAXParser parser = SAXParserFactory.newInstance().newSAXParser();
@@ -359,7 +311,7 @@ public class KmlDocument implements Parcelable {
 	
 	// KmlSaxHandler -------------
 	
-	class KmlSaxHandler extends DefaultHandler {
+	protected class KmlSaxHandler extends DefaultHandler {
 		
 		private StringBuilder mStringBuilder = new StringBuilder(1024);
 		private KmlFeature mKmlCurrentFeature;
@@ -376,12 +328,12 @@ public class KmlDocument implements Parcelable {
 		String mDataName;
 		boolean mIsNetworkLink;
 		boolean mIsInnerBoundary;
-		String mFullPath; //to get the path of relative sub-files
+		File mFile; //to get the path of relative sub-files
 		ZipFile mKMZFile;
 		double mNorth, mEast, mSouth, mWest;
 		
-		public KmlSaxHandler(String fullPath, ZipFile kmzContainer){
-			mFullPath = fullPath;
+		public KmlSaxHandler(File file, ZipFile kmzContainer){
+			mFile = file;
 			mKMZFile = kmzContainer;
 			mKmlRoot = new KmlFolder();
 			mKmlFeatureStack = new ArrayList<KmlFeature>();
@@ -397,15 +349,14 @@ public class KmlDocument implements Parcelable {
 			if (href.startsWith("http://") || href.startsWith("https://") )
 				ok = subDocument.parseUrl(href);
 			else if (kmzContainer == null){
-				File file = new File(mFullPath);
-				File subFile = new File(file.getParent()+'/'+href);
+				File subFile = new File(mFile.getParent()+'/'+href);
 				ok = subDocument.parseKMLFile(subFile);
 			} else {
 				try {
 					final ZipEntry fileEntry = kmzContainer.getEntry(href);
 					InputStream stream = kmzContainer.getInputStream(fileEntry);
 					Log.d(BonusPackHelper.LOG_TAG, "Load NetworkLink:"+href);
-					ok = subDocument.parseKMLStream(stream, mFullPath, kmzContainer);
+					ok = subDocument.parseKMLStream(stream, kmzContainer);
 				} catch (Exception e) {
 					ok = false;
 				}
@@ -579,14 +530,14 @@ public class KmlDocument implements Parcelable {
 				if (mCurrentStyle != null && mCurrentStyle.mIconStyle != null){
 					//href of an Icon in an IconStyle:
 					String href = mStringBuilder.toString();
-					mCurrentStyle.setIcon(href, mFullPath, mKMZFile);
+					mCurrentStyle.setIcon(href, mFile, mKMZFile);
 				} else if (mIsNetworkLink){
 					//href of a NetworkLink:
 					String href = mStringBuilder.toString();
 					loadNetworkLink(href, mKMZFile);
 				} else if (mKmlCurrentGroundOverlay != null){
 					//href of a GroundOverlay Icon:
-					mKmlCurrentGroundOverlay.setIcon(mStringBuilder.toString(), mFullPath, mKMZFile);
+					mKmlCurrentGroundOverlay.setIcon(mStringBuilder.toString(), mFile, mKMZFile);
 				}
 			} else if (localName.equals("Style")){
 				if (mCurrentStyleId != null)
@@ -669,8 +620,9 @@ public class KmlDocument implements Parcelable {
 	public boolean saveAsKML(File file){
 		try {
 			Log.d(BonusPackHelper.LOG_TAG, "Saving "+file.getAbsolutePath());
-			FileWriter fw = new FileWriter(file);
-			BufferedWriter writer = new BufferedWriter(fw, 8192);
+			//FileWriter fw = new FileWriter(file);
+			OutputStreamWriter out = new OutputStreamWriter(new FileOutputStream(file), "UTF-8");
+			BufferedWriter writer = new BufferedWriter(out, 8192);
 			boolean result = saveAsKML(writer);
 			writer.close();
 			Log.d(BonusPackHelper.LOG_TAG, "Saved.");
@@ -700,7 +652,7 @@ public class KmlDocument implements Parcelable {
 	 * Save the document as a GeoJSON file
 	 * @param file full path of the destination file
 	 * @return false if error
-	 * @see http://geojson.org
+	 * @see <a href="http://geojson.org">GeoJSON</a>
 	 */
 	public boolean saveAsGeoJSON(File file){
 		try {
@@ -741,8 +693,9 @@ public class KmlDocument implements Parcelable {
 	
 	/** Parse a GeoJSON File */
 	public boolean parseGeoJSON(File file){
+		mLocalFile = file;
 		try {
-			FileInputStream input = new FileInputStream(file);
+			FileInputStream input = new FileInputStream(mLocalFile);
 			String s = BonusPackHelper.convertStreamToString(input);
 			input.close();
 			return parseGeoJSON(s);
@@ -769,6 +722,10 @@ public class KmlDocument implements Parcelable {
 			out.writeParcelable(mStyles.get(key), flags);
 		}
 		out.writeInt(mMaxStyleId);
+		if (mLocalFile != null)
+			out.writeString(mLocalFile.getAbsolutePath());
+		else
+			out.writeString("");
 	}
 	
 	public static final Parcelable.Creator<KmlDocument> CREATOR = new Parcelable.Creator<KmlDocument>() {
@@ -791,6 +748,11 @@ public class KmlDocument implements Parcelable {
 			mStyles.put(key,value);
 		}
 		mMaxStyleId = in.readInt();
+		String filePath = in.readString();
+		if (filePath.equals(""))
+			mLocalFile = null;
+		else 
+			mLocalFile = new File(filePath);
 	}
 
 }

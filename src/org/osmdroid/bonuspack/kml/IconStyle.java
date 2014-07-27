@@ -7,6 +7,7 @@ import java.io.Writer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import org.apache.commons.lang3.StringEscapeUtils;
 import org.osmdroid.bonuspack.overlays.Marker;
 import org.osmdroid.bonuspack.utils.WebImageCache;
 import android.content.Context;
@@ -41,18 +42,22 @@ public class IconStyle extends ColorStyle implements Parcelable {
 	}
 	
 	/** Load and set the icon bitmap, from a url or from a local file. 
-	 * @param href either the full url, or a relative path to a local file. 
-	 * @param containerFullPath full path of the container file. 
+	 * @param href either the full url, or a relative path to a local file. Set null for none. 
+	 * @param containerFile the KML container file - or null if irrelevant. 
 	 * @param kmzContainer current KMZ file (as a ZipFile) - or null if irrelevant. 
 	 */
-	public void setIcon(String href, String containerFullPath, ZipFile kmzContainer){
+	public void setIcon(String href, File containerFile, ZipFile kmzContainer){
 		mHref = href;
+		if (mHref == null)
+			mIcon = null;
 		if (mHref.startsWith("http://") || mHref.startsWith("https://")){
 			mIcon = mIconCache.get(mHref);
 		} else if (kmzContainer == null){
-			File file = new File(containerFullPath);
-			String actualFullPath = file.getParent()+'/'+mHref;
-			mIcon = BitmapFactory.decodeFile(actualFullPath);
+			if (containerFile != null){
+				String actualFullPath = containerFile.getParent()+'/'+mHref;
+				mIcon = BitmapFactory.decodeFile(actualFullPath);
+			} else
+				mIcon = null;
 		} else {
 			try {
 				final ZipEntry fileEntry = kmzContainer.getEntry(href);
@@ -97,7 +102,7 @@ public class IconStyle extends ColorStyle implements Parcelable {
 			if (mHeading != 0.0f)
 				writer.write("<heading>"+mHeading+"</heading>\n");
 			if (mHref != null)
-				writer.write("<Icon><href>"+mHref+"</href></Icon>\n");
+				writer.write("<Icon><href>"+StringEscapeUtils.escapeXml10(mHref)+"</href></Icon>\n");
 			writer.write("<hotSpot x=\"" + mHotSpotX + "\" y=\"" + mHotSpotY + "\" xunits=\"fraction\" yunits=\"fraction\"/>\n");
 			writer.write("</IconStyle>\n");
 		} catch (IOException e) {
