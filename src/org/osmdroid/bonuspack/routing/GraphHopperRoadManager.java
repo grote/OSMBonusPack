@@ -2,33 +2,32 @@ package org.osmdroid.bonuspack.routing;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Locale;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.osmdroid.bonuspack.utils.BonusPackHelper;
-import org.osmdroid.bonuspack.utils.HttpConnection;
 import org.osmdroid.bonuspack.utils.PolylineEncoder;
 import org.osmdroid.util.BoundingBoxE6;
 import org.osmdroid.util.GeoPoint;
 import android.util.Log;
 
-/** get a route between a start and a destination point.
+/** get a route between a start and a destination point, going through a list of waypoints.
  * It uses GraphHopper, an open source routing service based on OpenSteetMap data. <br>
  * 
  * It requests by default the GraphHopper demo site. 
- * Use setService() to request an other (for instance your own) GraphHopper-compliant service. <br> 
+ * Use setService() to request another (for instance your own) GraphHopper-compliant service. <br> 
  * 
  * @see <a href="https://github.com/graphhopper/web-api/blob/master/docs-routing.md">GraphHopper</a>
  * @author M.Kergall
  */
 public class GraphHopperRoadManager extends RoadManager {
 
-	static final String SERVICE = "http://graphhopper.com/api/1/route?";
-
+	protected static final String SERVICE = "http://graphhopper.com/api/1/route?";
+	public static final int STATUS_NO_ROUTE = Road.STATUS_TECHNICAL_ISSUE+1;
+	
 	protected String mServiceUrl;
-	protected String mUserAgent;
 	protected String mKey;
+	protected boolean mWithElevation;
 	
 	/** mapping from GraphHopper directions to MapQuest maneuver IDs: */
 	static final HashMap<Integer, Integer> MANEUVERS;
@@ -42,39 +41,39 @@ public class GraphHopperRoadManager extends RoadManager {
 		MANEUVERS.put(-2, 4); //Left
 		MANEUVERS.put(-1, 3); //Slight left
 		MANEUVERS.put(4, 24); //Arrived
-		MANEUVERS.put(5, 24); //Arrived (at waypoint)
+		MANEUVERS.put(5, 24); //Arrived at waypoint
 	}
 	
-	public GraphHopperRoadManager(String key){
+	/**
+	 * @param apiKey GraphHopper API key, mandatory to use the public GraphHopper service. 
+	 * @see Contact <a href="http://graphhopper.com/#enterprise">GraphHopper</a> to obtain an API key. 
+	 */
+	public GraphHopperRoadManager(String apiKey){
 		super();
 		mServiceUrl = SERVICE;
-		mKey = key;
-		mUserAgent = BonusPackHelper.DEFAULT_USER_AGENT; //set user agent to the default one. 
+		mKey = apiKey;
+		mWithElevation = false;
 	}
 	
 	/** allows to request on an other site than GraphHopper demo site */
 	public void setService(String serviceUrl){
 		mServiceUrl = serviceUrl;
 	}
-
-	/** allows to send to GraphHopper service a user agent specific to the app, 
-	 * instead of the default user agent of OSMBonusPack lib. 
-	 */
-	public void setUserAgent(String userAgent){
-		mUserAgent = userAgent;
+	
+	/** set if altitude of every route point should be requested or not. Default is false. */
+	public void setElevation(boolean withElevation){
+		mWithElevation = withElevation;
 	}
 	
 	protected String getUrl(ArrayList<GeoPoint> waypoints){
 		StringBuffer urlString = new StringBuffer(mServiceUrl);
+		urlString.append("key="+mKey);
 		for (int i=0; i<waypoints.size(); i++){
 			GeoPoint p = waypoints.get(i);
 			urlString.append("&point="+geoPointAsString(p));
 		}
-		//urlString.append("&instructions=true"); already by default
-		urlString.append("&key="+mKey);
-
-		//Locale locale = Locale.getDefault();
-		//urlString.append("&locale="+locale.getLanguage());
+		//urlString.append("&instructions=true"); already set by default
+		urlString.append("&elevation="+(mWithElevation?"true":"false"));
 		urlString.append(mOptions);
 		return urlString.toString();
 	}
@@ -82,30 +81,22 @@ public class GraphHopperRoadManager extends RoadManager {
 	@Override public Road getRoad(ArrayList<GeoPoint> waypoints) {
 		String url = getUrl(waypoints);
 		Log.d(BonusPackHelper.LOG_TAG, "GraphHopper.getRoad:"+url);
-
-		//String jString = BonusPackHelper.requestStringFromUrl(url);
-		HttpConnection connection = new HttpConnection();
-		connection.setUserAgent(mUserAgent);
-		connection.doGet(url);
-		String jString = connection.getContentAsString();
-		connection.close();
-
+		String jString = BonusPackHelper.requestStringFromUrl(url);
 		if (jString == null) {
-			Log.e(BonusPackHelper.LOG_TAG, "GraphHopper::getRoad: request failed.");
 			return new Road(waypoints);
 		}
 		Road road = new Road();
 		try {
 			JSONObject jRoot = new JSONObject(jString);
-			JSONArray jPaths = jRoot.getJSONArray("paths");
-			if (jPaths.length() == 0){
-				road.mStatus = Road.STATUS_TECHNICAL_ISSUE+1; //TODO - document
-				return new Road(waypoints);
+			JSONArray jPaths = jRoot.optJSONArray("paths");
+			if (jPaths == null || jPaths.length() == 0){
+				road = new Road(waypoints);
+				road.mStatus = STATUS_NO_ROUTE;
+				return road;
 			}
 			JSONObject jFirstPath = jPaths.getJSONObject(0);
-			road.mStatus = Road.STATUS_OK; //TODO => info.errors
 			String route_geometry = jFirstPath.getString("points");
-			road.mRouteHigh = PolylineEncoder.decode(route_geometry, 1);
+			road.mRouteHigh = PolylineEncoder.decode(route_geometry, 10, mWithElevation);
 			JSONArray jInstructions = jFirstPath.getJSONArray("instructions");
 			int n = jInstructions.length();
 			for (int i=0; i<n; i++){
@@ -117,13 +108,18 @@ public class GraphHopperRoadManager extends RoadManager {
 				node.mLength = jInstruction.getDouble("distance")/1000.0;
 				node.mDuration = jInstruction.getInt("time")/1000.0; //Segment duration in seconds.
 				int direction = jInstruction.getInt("sign");
-				node.mInstructions = jInstruction.getString("text");
 				node.mManeuverType = getManeuverCode(direction);
+				node.mInstructions = jInstruction.getString("text");
 				road.mNodes.add(node);
 			}
 			road.mLength = jFirstPath.getDouble("distance")/1000.0;
 			road.mDuration = jFirstPath.getInt("time")/1000.0;
+			JSONArray jBBox = jFirstPath.getJSONArray("bbox");
+			road.mBoundingBox = new BoundingBoxE6(jBBox.getDouble(3), jBBox.getDouble(2), 
+					jBBox.getDouble(1), jBBox.getDouble(0));
+			road.mStatus = Road.STATUS_OK;
 		} catch (JSONException e) {
+			road.mStatus = Road.STATUS_TECHNICAL_ISSUE;
 			e.printStackTrace();
 		}
 		if (road.mStatus != Road.STATUS_OK){
@@ -133,8 +129,6 @@ public class GraphHopperRoadManager extends RoadManager {
 			road.mStatus = status;
 		} else {
 			road.buildLegs(waypoints);
-			road.mBoundingBox = BoundingBoxE6.fromGeoPoints(road.mRouteHigh); //TODO: use jFirstPath.get("bbox");
-			road.mStatus = Road.STATUS_OK;
 		}
 		Log.d(BonusPackHelper.LOG_TAG, "GraphHopper.getRoad - finished");
 		return road;
