@@ -3,7 +3,7 @@ package org.osmdroid.bonuspack.kml;
 import java.io.IOException;
 import java.io.Writer;
 import org.osmdroid.bonuspack.kml.KmlFeature.Styler;
-import org.osmdroid.bonuspack.overlays.DefaultInfoWindow;
+import org.osmdroid.bonuspack.overlays.BasicInfoWindow;
 import org.osmdroid.bonuspack.overlays.Polyline;
 import org.osmdroid.bonuspack.utils.BonusPackHelper;
 import org.osmdroid.util.BoundingBoxE6;
@@ -44,12 +44,14 @@ public class KmlLineString extends KmlGeometry {
 			lineStringOverlay.setWidth(defaultStyle.getOutlinePaint().getStrokeWidth());
 		}
 		if ((kmlPlacemark.mName!=null && !"".equals(kmlPlacemark.mName)) 
-				|| (kmlPlacemark.mDescription!=null && !"".equals(kmlPlacemark.mDescription))){
+				|| (kmlPlacemark.mDescription!=null && !"".equals(kmlPlacemark.mDescription))
+				|| (lineStringOverlay.getSubDescription()!=null && !"".equals(lineStringOverlay.getSubDescription()))
+				){
 			if (mDefaultLayoutResId == BonusPackHelper.UNDEFINED_RES_ID){
 				String packageName = context.getPackageName();
 				mDefaultLayoutResId = context.getResources().getIdentifier("layout/bonuspack_bubble", null, packageName);
 			}
-			lineStringOverlay.setInfoWindow(new DefaultInfoWindow(mDefaultLayoutResId, map));
+			lineStringOverlay.setInfoWindow(new BasicInfoWindow(mDefaultLayoutResId, map));
 		}
 		lineStringOverlay.setEnabled(kmlPlacemark.mVisibility);
 	}
@@ -62,6 +64,7 @@ public class KmlLineString extends KmlGeometry {
 		lineStringOverlay.setPoints(mCoordinates);
 		lineStringOverlay.setTitle(kmlPlacemark.mName);
 		lineStringOverlay.setSnippet(kmlPlacemark.mDescription);
+		lineStringOverlay.setSubDescription(kmlPlacemark.getExtendedDataAsText());
 		if (styler != null)
 			styler.onLineString(lineStringOverlay, kmlPlacemark, this);
 		else {

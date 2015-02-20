@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
 import org.osmdroid.bonuspack.kml.KmlFeature.Styler;
-import org.osmdroid.bonuspack.overlays.DefaultInfoWindow;
+import org.osmdroid.bonuspack.overlays.BasicInfoWindow;
 import org.osmdroid.bonuspack.overlays.Polygon;
 import org.osmdroid.bonuspack.utils.BonusPackHelper;
 import org.osmdroid.util.BoundingBoxE6;
@@ -53,12 +53,14 @@ public class KmlPolygon extends KmlGeometry {
 			polygonOverlay.setFillColor(fillColor);
 		}
 		if ((kmlPlacemark.mName!=null && !"".equals(kmlPlacemark.mName)) 
-				|| (kmlPlacemark.mDescription!=null && !"".equals(kmlPlacemark.mDescription))){
+				|| (kmlPlacemark.mDescription!=null && !"".equals(kmlPlacemark.mDescription))
+				|| (polygonOverlay.getSubDescription()!=null && !"".equals(polygonOverlay.getSubDescription()))
+				){
 			if (mDefaultLayoutResId == BonusPackHelper.UNDEFINED_RES_ID){
 				String packageName = context.getPackageName();
 				mDefaultLayoutResId = context.getResources().getIdentifier("layout/bonuspack_bubble", null, packageName);
 			}
-			polygonOverlay.setInfoWindow(new DefaultInfoWindow(mDefaultLayoutResId, map));
+			polygonOverlay.setInfoWindow(new BasicInfoWindow(mDefaultLayoutResId, map));
 		}
 		polygonOverlay.setEnabled(kmlPlacemark.mVisibility);
 	}
@@ -73,6 +75,7 @@ public class KmlPolygon extends KmlGeometry {
 			polygonOverlay.setHoles(mHoles);
 		polygonOverlay.setTitle(kmlPlacemark.mName);
 		polygonOverlay.setSnippet(kmlPlacemark.mDescription);
+		polygonOverlay.setSubDescription(kmlPlacemark.getExtendedDataAsText());
 		if (styler == null)
 			applyDefaultStyling(polygonOverlay, defaultStyle, kmlPlacemark, kmlDocument, map);
 		else

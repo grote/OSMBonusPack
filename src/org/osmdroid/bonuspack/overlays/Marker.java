@@ -7,7 +7,6 @@ import org.osmdroid.bonuspack.utils.BonusPackHelper;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.Projection;
-import org.osmdroid.views.overlay.Overlay;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Point;
@@ -39,7 +38,7 @@ import android.view.MotionEvent;
  * @author M.Kergall
  *
  */
-public class Marker extends Overlay {
+public class Marker extends OverlayWithIW {
 
 	/*attributes for standard features:*/
 	protected Drawable mIcon;
@@ -48,16 +47,13 @@ public class Marker extends Overlay {
 	protected float mAnchorU, mAnchorV;
 	protected float mIWAnchorU, mIWAnchorV;
 	protected float mAlpha;
-	protected String mTitle, mSnippet;
 	protected boolean mDraggable, mIsDragged;
-	protected MarkerInfoWindow mInfoWindow;
 	protected boolean mFlat;
 	protected OnMarkerClickListener mOnMarkerClickListener;
 	protected OnMarkerDragListener mOnMarkerDragListener;
 	
 	/*attributes for non-standard features:*/
 	protected Drawable mImage;
-	protected String mSubDescription;
 	protected boolean mPanToView;
 	protected Object mRelatedObject;
 	
@@ -102,7 +98,7 @@ public class Marker extends Overlay {
 			else 
 				mDefaultInfoWindow = new MarkerInfoWindow(defaultLayoutResId, mapView);
 		}
-		mInfoWindow = mDefaultInfoWindow;
+		setInfoWindow(mDefaultInfoWindow);
 	}
 
 	/** Sets the icon for the marker. Can be changed at any time. 
@@ -149,22 +145,6 @@ public class Marker extends Overlay {
 		return mAlpha;
 	}
 	
-	public void setTitle(String title){
-		mTitle = title;
-	}
-	
-	public String getTitle(){
-		return mTitle;
-	}
-	
-	public void setSnippet(String snippet){
-		mSnippet= snippet;
-	}
-	
-	public String getSnippet(){
-		return mSnippet;
-	}
-
 	public void setDraggable(boolean draggable){
 		mDraggable = draggable;
 	}
@@ -199,15 +179,6 @@ public class Marker extends Overlay {
 		mOnMarkerDragListener = listener;
 	}
 	
-	/** set the "sub-description", an optional text to be shown in the InfoWindow, below the snippet, in a smaller text size */
-	public void setSubDescription(String subDescription){
-		mSubDescription = subDescription;
-	}
-	
-	public String getSubDescription(){
-		return mSubDescription;
-	}
-
 	/** set an image to be shown in the InfoWindow  - this is not the marker icon */
 	public void setImage(Drawable image){
 		mImage = image;
@@ -257,13 +228,12 @@ public class Marker extends Overlay {
 		mInfoWindow.open(this, mPosition, offsetX, offsetY);
 	}
 	
-	public void hideInfoWindow(){
-		if (mInfoWindow != null)
-			mInfoWindow.close();
-	}
-
 	public boolean isInfoWindowShown(){
-		return (mInfoWindow != null) && mInfoWindow.isOpen() && (mInfoWindow.mMarkerRef==this);
+		if (mInfoWindow instanceof MarkerInfoWindow){
+			MarkerInfoWindow iw = (MarkerInfoWindow)mInfoWindow;
+			return (iw != null) && iw.isOpen() && (iw.mMarkerRef==this);
+		} else
+			return super.isInfoWindowOpen();
 	}
 	
 	@Override public void draw(Canvas canvas, MapView mapView, boolean shadow) {
@@ -321,7 +291,7 @@ public class Marker extends Overlay {
 			if (mDraggable){
 				//starts dragging mode:
 				mIsDragged = true;
-				hideInfoWindow();
+				closeInfoWindow();
 				if (mOnMarkerDragListener != null)
 					mOnMarkerDragListener.onMarkerDragStart(this);
 				moveToEventPosition(event, mapView);

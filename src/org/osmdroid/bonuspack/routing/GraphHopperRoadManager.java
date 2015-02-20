@@ -22,7 +22,7 @@ import android.util.Log;
  */
 public class GraphHopperRoadManager extends RoadManager {
 
-	protected static final String SERVICE = "http://graphhopper.com/api/1/route?";
+	protected static final String SERVICE = "https://graphhopper.com/api/1/route?";
 	public static final int STATUS_NO_ROUTE = Road.STATUS_TECHNICAL_ISSUE+1;
 	
 	protected String mServiceUrl;
@@ -46,7 +46,7 @@ public class GraphHopperRoadManager extends RoadManager {
 	
 	/**
 	 * @param apiKey GraphHopper API key, mandatory to use the public GraphHopper service. 
-	 * @see Contact <a href="http://graphhopper.com/#enterprise">GraphHopper</a> to obtain an API key. 
+	 * @see <a href="http://graphhopper.com/#enterprise">GraphHopper</a> to obtain an API key. 
 	 */
 	public GraphHopperRoadManager(String apiKey){
 		super();
