@@ -7,7 +7,11 @@ buildscript {
 	}
 }
 
-apply plugin: 'android-library'
+apply plugin: 'com.android.library'
+
+repositories {
+	jcenter()
+}
 
 android {
 	defaultConfig {
@@ -43,9 +47,8 @@ android {
 }
 
 dependencies {
-    compile 'com.android.support:support-v4:21.0.3'
-    compile files('libs/osmdroid-android-4.3.jar')
-    compile files('libs/slf4j-android-1.5.8.jar')
-    compile files('libs/gson-2.2.4.jar')
-    compile files('libs/commons-lang3-3.3.2.jar')
+    compile "com.android.support:support-v4:22.2.1"
+    compile 'org.osmdroid:osmdroid-android:4.3'
+    compile 'org.apache.commons:commons-lang3:3.3.2'
+    compile 'com.google.code.gson:gson:2.3'
 }
