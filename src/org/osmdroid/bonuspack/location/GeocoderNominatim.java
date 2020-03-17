@@ -167,7 +167,7 @@ public class GeocoderNominatim {
 	public List<Address> getFromLocation(double latitude, double longitude, int maxResults) 
 	throws IOException {
 		String url = mServiceUrl
-			+ "reverse?"
+			+ "reverse.php?"
 			+ "format=json"
 			+ "&accept-language=" + mLocale.getLanguage()
 			//+ "&addressdetails=1"
@@ -201,7 +201,7 @@ public class GeocoderNominatim {
 			boolean bounded)
 	throws IOException {
 		String url = mServiceUrl
-				+ "search?"
+				+ "search.php?"
 				+ "format=json"
 				+ "&accept-language=" + mLocale.getLanguage()
 				+ "&addressdetails=1"
